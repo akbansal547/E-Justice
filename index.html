@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Statement Interface</title>
+
+  <!-- Tesseract.js for OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.1/dist/tesseract.min.js"></script>
+
+  <!-- PDF.js for PDF extraction -->
+  <script type="module">
+    import * as pdfjsLib from 'https://mozilla.github.io/pdf.js/build/pdf.mjs';
+    window.pdfjsLib = pdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.mjs';
+  </script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-image: url("2.png");
+      background-size: cover;
+      background-position: center;
+      height: 100vh;
+      color: white;
+      transition: background 0.8s ease;
+    }
+
+    .container {
+      display: flex;
+      height: 100%;
+      width: 100%;
+      justify-content: space-between;
+      padding: 0 20px;
+    }
+
+    .left-panel, .right-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .left-panel {
+      align-items: flex-start;
+      margin-left: 40px;
+    }
+
+    .right-panel {
+      align-items: flex-end;
+      margin-right: 40px;
+    }
+
+    .left-panel p {
+      margin-bottom: 40px;
+      font-size: 26px;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+
+    .btn {
+      background-color: white;
+      color: black;
+      font-weight: bold;
+      border: none;
+      border-radius: 12px;
+      padding: 20px 35px;
+      margin-bottom: 15px;
+      cursor: pointer;
+      font-size: 20px;
+      transition: transform 0.3s ease, background-color 0.3s ease;
+    }
+
+    .btn:hover {
+      transform: scale(1.08);
+      background-color: #f0f0f0;
+    }
+
+    #text-input-area {
+      display: none;
+      flex-direction: column;
+      margin-top: 15px;
+    }
+
+    #text-input-area textarea {
+      width: 250px;
+      height: 100px;
+      border-radius: 10px;
+      border: none;
+      padding: 10px;
+      font-size: 16px;
+      resize: none;
+    }
+
+    #text-input-area button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      background-color: white;
+      color: black;
+      cursor: pointer;
+    }
+
+    .statement-list {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: rgba(255, 255, 255, 0.9);
+      color: black;
+      padding: 15px;
+      border-radius: 12px;
+      font-size: 14px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      z-index: 999;
+    }
+
+    .statement-list ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .statement-list li {
+      margin-bottom: 8px;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-size: 16px;
+      color: yellow;
+    }
+
+    #splash-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    #splash-screen img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    #verdict-container {
+      display: none;
+      padding: 40px;
+      font-size: 20px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: white;
+    }
+
+    #verdict-buttons {
+      margin-top: 30px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Splash Screen -->
+  <div id="splash-screen">
+    <img src="1.gif" alt="Loading...">
+  </div>
+
+  <!-- Main UI -->
+  <div class="container" id="mainContainer" style="display: none;">
+    <div class="left-panel">
+      <p id="labelText">Enter information<br>in favour of the victim<br>through -</p>
+      <button class="btn" onclick="showTextBox()">Text</button>
+      <button class="btn" onclick="startSpeechRecognition()">Speech</button>
+      <button class="btn" onclick="document.getElementById('fileInput').click()">Document</button>
+      <input type="file" id="fileInput" accept=".txt,.pdf,.png,.jpg,.jpeg" style="display: none" onchange="handleFileUpload(event)">
+      <div id="text-input-area">
+        <textarea id="statementText" placeholder="Type your information here..."></textarea>
+        <button onclick="submitText()">Submit</button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <div class="right-panel">
+      <button class="btn" onclick="finaliseCase()">Finalise victim’s case</button>
+      <button class="btn" onclick="toggleStatementList()" id="viewToggle">View information added<br>in favour of the victim</button>
+    </div>
+  </div>
+
+  <!-- Verdict Container -->
+  <div id="verdict-container"></div>
+
+  <!-- Statement Viewer -->
+  <div id="statement-list" class="statement-list">
+    <strong id="listTitle">Statements:</strong>
+    <ul id="statementItems"></ul>
+  </div>
+
+  <!-- Verdict Sound -->
+  <audio id="verdictSound" src="verdict.mp3" preload="auto"></audio>
+
+  <script>
+    let victim = [], defendant = [], currentMode = 'victim', toggleCount = 0, verdictData = '', speakText = null;
+
+    window.onload = () => {
+      setTimeout(() => {
+        document.getElementById("splash-screen").style.display = "none";
+        document.getElementById("mainContainer").style.display = "flex";
+      }, 4975);
+    };
+
+    function showTextBox() {
+      document.getElementById('text-input-area').style.display = 'flex';
+    }
+
+    function submitText() {
+      const text = document.getElementById('statementText').value.trim();
+      if (text) {
+        (currentMode === 'victim' ? victim : defendant).push(text);
+      }
+      document.getElementById('text-input-area').style.display = 'none';
+      document.getElementById('statementText').value = '';
+    }
+
+    function toggleStatementList() {
+      const listDiv = document.getElementById('statement-list');
+      const listItems = document.getElementById('statementItems');
+      const listTitle = document.getElementById('listTitle');
+      if (listDiv.style.display === 'none' || listDiv.style.display === '') {
+        listItems.innerHTML = '';
+        const data = currentMode === 'victim' ? victim : defendant;
+        listTitle.textContent = currentMode.charAt(0).toUpperCase() + currentMode.slice(1) + ' Statements:';
+        data.forEach((item, index) => {
+          const li = document.createElement('li');
+          li.textContent = `${index + 1}. ${item}`;
+          listItems.appendChild(li);
+        });
+        listDiv.style.display = 'block';
+      } else {
+        listDiv.style.display = 'none';
+      }
+    }
+
+    function startSpeechRecognition() {
+      const status = document.getElementById("status");
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return alert("Speech Recognition not supported.");
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      status.textContent = "Listening...";
+      recognition.start();
+      recognition.onresult = function (event) {
+        const result = event.results[0][0].transcript.trim();
+        if (result) (currentMode === 'victim' ? victim : defendant).push(result);
+        status.textContent = "Speech captured.";
+        setTimeout(() => status.textContent = "", 3000);
+      };
+      recognition.onerror = function (event) {
+        status.textContent = "Error: " + event.error;
+        setTimeout(() => status.textContent = "", 3000);
+      };
+    }
+
+    function finaliseCase() {
+      toggleCount++;
+      if (toggleCount === 4) {
+        document.body.style.backgroundImage = "url('3.png')";
+        document.getElementById('verdictSound').play().catch(() => {});
+        document.getElementById('status').textContent = "Calculating verdict...";
+
+        const prompt = `You are an AI-enabled judge which gives judicial sentences based on the Indian Penal Code.
+
+Here are the victim statements: ${victim.join(" | ")}
+Here are the defendant statements: ${defendant.join(" | ")}
+
+Assume this information to be complete and true. Do not infer, assume, or account for anything not explicitly provided.Dont give anything extra other than the 3 headings below, not even an extra word. dont use special characters except full stops and commas and dont bold. If the statements are blank then dont deliver a sentence. You should deliver a sentence only when necessary.
+
+Deliver a proper and final court order under the following three heads:
+1. Sentencing – deliver a specific legal verdict with appropriate punishments IF APPLICABLE. Avoid vague or probabilistic terms.
+2. Reasoning – justify the verdict in around 450 characters.
+3. Precedents – cite relevant legal precedent(s) in around 450 characters.`;
+
+        fetch("https://ai.hackclub.com/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: [{ role: "user", content: prompt }] })
+        })
+        .then(res => res.json())
+        .then(data => {
+          const raw = data.choices?.[0]?.message?.content || "No verdict returned.";
+          verdictData = raw;
+
+          const formatted = raw
+            .replace(/#+\s*Sentencing\s*:*/gi, "<div><u><b>Sentencing</b></u></div>")
+            .replace(/#+\s*Reasoning\s*:*/gi, "<div style='margin-top: 15px;'><u><b>Reasoning</b></u></div>")
+            .replace(/#+\s*Precedents\s*:*/gi, "<div style='margin-top: 15px;'><u><b>Precedents</b></u></div>");
+
+          document.getElementById('mainContainer').style.display = "none";
+          document.getElementById('verdict-container').style.display = "block";
+          document.getElementById('verdict-container').innerHTML = `
+            ${formatted}
+            <div id="verdict-buttons">
+              <button class="btn" onclick="stopSpeakingAndGoBack()">Back</button>
+              <button class="btn" onclick="exportTXT()">Export as TXT</button>
+            </div>
+          `;
+
+          speakText = new SpeechSynthesisUtterance(raw.replace(/[^\w\s.,:;?!%()'"₹]/g, ''));
+          speakText.lang = 'en-IN';
+          speechSynthesis.cancel();
+          speechSynthesis.speak(speakText);
+        })
+        .catch(() => {
+          document.getElementById('status').textContent = "Error retrieving verdict.";
+        });
+
+        return;
+      }
+
+      currentMode = currentMode === 'victim' ? 'defendant' : 'victim';
+      document.getElementById('labelText').innerHTML =
+        currentMode === 'defendant'
+          ? (toggleCount === 3 ? "Add defendant comments<br>" : "Enter information<br>in favour of the defendant<br>through -")
+          : "Add victim comments<br>";
+      document.getElementById('viewToggle').innerHTML =
+        `View information added<br>in favour of the ${currentMode}`;
+      document.querySelector('.right-panel .btn').innerHTML =
+        `Finalise ${currentMode}’s case`;
+    }
+
+    function stopSpeakingAndGoBack() {
+      if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+      }
+      location.reload();
+    }
+
+    function exportTXT() {
+      const allContent = `Case Summary
+
+Victim Statements:
+${victim.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Defendant Statements:
+${defendant.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Verdict:
+${verdictData}
+`;
+      const blob = new Blob([allContent], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "case_summary.txt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    async function extractTextFromPDF(file) {
+      const buffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(' ') + '\n\n';
+      }
+      return text;
+    }
+
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      const status = document.getElementById("status");
+      if (!file) return;
+      status.textContent = "Processing file...";
+
+      const reader = (text) => {
+        if (text.trim()) {
+          (currentMode === 'victim' ? victim : defendant).push(text.trim());
+          status.textContent = "File processed successfully.";
+        } else {
+          status.textContent = "No readable content found.";
+        }
+      };
+
+      if (file.type === "text/plain") {
+        file.text().then(reader);
+      } else if (file.type === "application/pdf") {
+        extractTextFromPDF(file).then(reader);
+      } else if (file.type.startsWith("image/")) {
+        Tesseract.recognize(file, 'eng').then(({ data: { text } }) => reader(text));
+      } else {
+        status.textContent = "Unsupported file type.";
+      }
+
+      event.target.value = '';
+    }
+  </script>
+</body>
+</html>

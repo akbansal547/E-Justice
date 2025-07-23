@@ -1,6 +1,7 @@
 # eJustice
 
 **eJustice** is a small project I made which gives fair and quick decisions based on what both sides say. It's like a chatbot judge who listens to the victim and defendant and then gives a decision using IPC laws.
+<img width="1244" height="624" alt="image" src="https://github.com/user-attachments/assets/161bc8d3-5a2a-46b7-8536-0beeee7abd06" />
 
 ---
 
